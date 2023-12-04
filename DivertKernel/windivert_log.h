@@ -1,5 +1,5 @@
 /*
- * windivert.rc
+ * windivert_log.mc
  * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
@@ -31,29 +31,57 @@
  * with this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
+//
+//  Values are 32 bit values laid out as follows:
+//
+//   3 3 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1
+//   1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0 9 8 7 6 5 4 3 2 1 0
+//  +---+-+-+-----------------------+-------------------------------+
+//  |Sev|C|R|     Facility          |               Code            |
+//  +---+-+-+-----------------------+-------------------------------+
+//
+//  where
+//
+//      Sev - is the severity code
+//
+//          00 - Success
+//          01 - Informational
+//          10 - Warning
+//          11 - Error
+//
+//      C - is the Customer code flag
+//
+//      R - is a reserved bit
+//
+//      Facility - is the facility code
+//
+//      Code - is the facility's status code
+//
+//
+// Define the facility codes
+//
+#define FACILITY_SYSTEM                  0x0
+#define FACILITY_RUNTIME                 0x2
+#define FACILITY_STUBS                   0x3
+#define FACILITY_IO_ERROR_CODE           0x4
+#define FACILITY_WINDIVERT               0x574
 
-#include <windows.h>
-#include <ntverp.h>
 
-#include "windivert_log.rc"
+//
+// Define the severity codes
+//
+#define STATUS_SEVERITY_SUCCESS          0x0
+#define STATUS_SEVERITY_INFORMATIONAL    0x1
+#define STATUS_SEVERITY_WARNING          0x2
+#define STATUS_SEVERITY_ERROR            0x3
 
-#define VER_FILETYPE                VFT_DRV
-#define VER_FILESUBTYPE             VFT2_DRV_NETWORK
-#define VER_FILEDESCRIPTION_STR     \
-    "The WinDivert 2.2 driver " \
-    "[URL: https://reqrypt.org/windivert.html] " \
-    "[Bitcoin: 1C5vZVSbizPeZ8ydTYhUfm4LA2cNwBfcYh]"
-#define VER_INTERNALNAME_STR        "WinDivert.sys"
-#define VER_ORIGINALFILENAME_STR    "WinDivert.sys"
-#define VER_PRODUCTVERSION          2.2
-#define VER_PRODUCTVERSION_STR      "2.2"
-#define VER_COMPANYNAME_STR         "Basil"
-#define VER_LEGALCOPYRIGHT_YEARS    "2011-2019"
-#define VER_LEGALCOPYRIGHT_STR      \
-    "Copyright \251 " VER_COMPANYNAME_STR " " VER_LEGALCOPYRIGHT_YEARS 
-#define VER_FILEVERSION             VER_PRODUCTVERSION
-#define VER_FILEVERSION_STR         VER_PRODUCTVERSION_STR
-#define VER_PRODUCTNAME_STR         "WinDivert 2.2 driver"
 
-#include "common.ver"
+//
+// MessageId: WINDIVERT_INFO_EVENT
+//
+// MessageText:
+//
+// %2 %3 (processId=%4)
+//
+#define WINDIVERT_INFO_EVENT             ((NTSTATUS)0x4574312DL)
 
