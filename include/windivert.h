@@ -118,8 +118,10 @@ extern "C" {
         UINT16 LocalPort;                   /* Local port. */
         UINT16 RemotePort;                  /* Remote port. */
         UINT8  Protocol;                    /* Protocol. */
+        UINT64 MsgId;                        /*消息ID*/
+        UINT32 IsUserBlock;                 /* 用户决策是否拦截*/
+        UINT32 Sync;                        /* 是否是同步决策请求*/
     } WINDIVERT_DATA_SOCKET, * PWINDIVERT_DATA_SOCKET;
-
     /*
      * WinDivert REFLECTION layer data.
      */
@@ -163,6 +165,7 @@ extern "C" {
             UINT8 Reserved3[64];
         };
     } WINDIVERT_ADDRESS, * PWINDIVERT_ADDRESS;
+
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -196,6 +199,7 @@ extern "C" {
 #define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
 #define WINDIVERT_FLAG_NO_INSTALL       0x0010
 #define WINDIVERT_FLAG_FRAGMENTS        0x0020
+#define WINDIVERT_FLAG_DECISION         0x0040
 
      /*
       * WinDivert parameters.
@@ -264,7 +268,10 @@ extern "C" {
         __in        UINT packetLen,
         __out_opt   UINT* pSendLen,
         __in        const WINDIVERT_ADDRESS* pAddr);
-
+    //socket 层支持同步处理
+    WINDIVERTEXPORT BOOL WinDivertSetSocket(
+        __in        HANDLE handle,
+        __in        const WINDIVERT_ADDRESS* pAddr);
     /*
      * Send (write/inject) a packet to a WinDivert handle.
      */

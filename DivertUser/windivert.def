@@ -1,10 +1,11 @@
-LIBRARY WinDivert
+﻿LIBRARY WinDivert
 EXPORTS
     WinDivertOpen
     WinDivertRecv
     WinDivertRecvEx
     WinDivertSend
     WinDivertSendEx
+    WinDivertSetSocket
     WinDivertShutdown
     WinDivertClose
     WinDivertSetParam

@@ -57,12 +57,16 @@
   <ItemGroup>
     <ResourceCompile Include="windivert_kernel.rc" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="windivert_kernel.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <RootNamespace>WinDivert</RootNamespace>
     <ProjectName>WinDivertKernel</ProjectName>
     <ProjectGuid>{2E76D67A-9C15-4D12-9DFA-9854AED93B10}</ProjectGuid>
+    <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
@@ -76,6 +80,9 @@
     <EnableInf2cat>false</EnableInf2cat>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <TargetName>$(TargetName.Replace(' ',''))64</TargetName>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <WppEnabled>false</WppEnabled>

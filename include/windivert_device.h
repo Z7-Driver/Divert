@@ -21,12 +21,12 @@
  * the terms of the GNU General Public License as published by the Free
  * Software Foundation; either version 2 of the License, or (at your option)
  * any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
  * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
  * for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along
  * with this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -35,11 +35,11 @@
 #ifndef __WINDIVERT_DEVICE_H
 #define __WINDIVERT_DEVICE_H
 
-/*
- * NOTE: This is the low-level interface to the WinDivert device driver.
- *       This interface should not be used directly, instead use the high-level
- *       interface provided by the WinDivert API.
- */
+ /*
+  * NOTE: This is the low-level interface to the WinDivert device driver.
+  *       This interface should not be used directly, instead use the high-level
+  *       interface provided by the WinDivert API.
+  */
 
 #define WINDIVERT_KERNEL
 #include "windivert.h"
@@ -166,24 +166,24 @@
 #define WINDIVERT_FILTER_RESULT_ACCEPT              0x7FFE
 #define WINDIVERT_FILTER_RESULT_REJECT              0x7FFF
 
-/*
- * WinDivert layers.
- */
+  /*
+   * WinDivert layers.
+   */
 #define WINDIVERT_LAYER_MAX                         WINDIVERT_LAYER_REFLECT
 
-/*
- * WinDivert events.
- */
+   /*
+    * WinDivert events.
+    */
 #define WINDIVERT_EVENT_MAX                         \
     WINDIVERT_EVENT_REFLECT_CLOSE
 
-/*
- * WinDivert flags.
- */
+    /*
+     * WinDivert flags.
+     */
 #define WINDIVERT_FLAGS_ALL                                                 \
     (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_RECV_ONLY |\
         WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_NO_INSTALL |              \
-        WINDIVERT_FLAG_FRAGMENTS)
+        WINDIVERT_FLAG_FRAGMENTS | WINDIVERT_FLAG_DECISION)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \
@@ -191,11 +191,15 @@
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_SNIFF,                   \
         WINDIVERT_FLAG_DROP) &&                                             \
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_RECV_ONLY,               \
-        WINDIVERT_FLAG_SEND_ONLY))
+        WINDIVERT_FLAG_SEND_ONLY) &&                                        \
+     WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_SNIFF,                   \
+        WINDIVERT_FLAG_DECISION) &&                                         \
+     WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_DROP,                    \
+        WINDIVERT_FLAG_DECISION))
 
-/*
- * WinDivert filter flags.
- */
+     /*
+      * WinDivert filter flags.
+      */
 #define WINDIVERT_FILTER_FLAG_INBOUND               0x0000000000000010ull
 #define WINDIVERT_FILTER_FLAG_OUTBOUND              0x0000000000000020ull
 #define WINDIVERT_FILTER_FLAG_IP                    0x0000000000000040ull
@@ -219,20 +223,20 @@
         WINDIVERT_FILTER_FLAG_EVENT_SOCKET_ACCEPT |                         \
         WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CLOSE)
 
-/*
- * WinDivert priorities.
- */
+      /*
+       * WinDivert priorities.
+       */
 #define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY_HIGHEST
 #define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_LOWEST
 
-/*
- * WinDivert timestamps.
- */
+       /*
+        * WinDivert timestamps.
+        */
 #define WINDIVERT_TIMESTAMP_MAX                     0x7FFFFFFFFFFFFFFFull
 
-/*
- * WinDivert message definitions.
- */
+        /*
+         * WinDivert message definitions.
+         */
 #pragma pack(push, 1)
 typedef union
 {
@@ -269,7 +273,7 @@ typedef union
         UINT64 val;                 // Value pointer.
         UINT32 param;               // WINDIVERT_PARAM_*
     } set_param;
-} WINDIVERT_IOCTL, *PWINDIVERT_IOCTL;
+} WINDIVERT_IOCTL, * PWINDIVERT_IOCTL;
 
 /*
  * WinDivert initialization structure.
@@ -282,21 +286,21 @@ typedef struct
     UINT32 bits;                    // 32 or 64 (in/out).
     UINT32 reserved32[3];
     UINT64 reserved64[4];
-} WINDIVERT_VERSION, *PWINDIVERT_VERSION;
+} WINDIVERT_VERSION, * PWINDIVERT_VERSION;
 
 /*
  * WinDivert filter structure.
  */
 typedef struct
 {
-    UINT32 field:11;                // WINDIVERT_FILTER_FIELD_*
-    UINT32 test:5;                  // WINDIVERT_FILTER_TEST_*
-    UINT32 success:16;              // Success continuation.
-    UINT32 failure:16;              // Fail continuation.
-    UINT32 neg:1;                   // Argument negative?
-    UINT32 reserved:15;
+    UINT32 field : 11;                // WINDIVERT_FILTER_FIELD_*
+    UINT32 test : 5;                  // WINDIVERT_FILTER_TEST_*
+    UINT32 success : 16;              // Success continuation.
+    UINT32 failure : 16;              // Fail continuation.
+    UINT32 neg : 1;                   // Argument negative?
+    UINT32 reserved : 15;
     UINT32 arg[4];                  // Argument.
-} WINDIVERT_FILTER, *PWINDIVERT_FILTER;
+} WINDIVERT_FILTER, * PWINDIVERT_FILTER;
 #pragma pack(pop)
 
 /*
@@ -312,6 +316,9 @@ typedef struct
     CTL_CODE(FILE_DEVICE_NETWORK, 0x923, METHOD_OUT_DIRECT, FILE_READ_DATA)
 #define IOCTL_WINDIVERT_SEND                                                \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x924, METHOD_IN_DIRECT, FILE_READ_DATA | \
+        FILE_WRITE_DATA)
+#define IOCTL_WINDIVERT_SEND_SOCKET                                                \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x928, METHOD_IN_DIRECT, FILE_READ_DATA | \
         FILE_WRITE_DATA)
 #define IOCTL_WINDIVERT_SET_PARAM                                           \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x925, METHOD_IN_DIRECT, FILE_READ_DATA | \
