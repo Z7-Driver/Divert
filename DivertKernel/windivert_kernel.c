@@ -5356,6 +5356,8 @@ AllocateAndInitializePendedPacket(
                 pendedPacket->controlData = (WSACMSGHDR*)windivert_malloc(inMetaValues->controlDataLength, FALSE);
                 if (pendedPacket->controlData == NULL)
                 {
+                    FreePendedPacket(pendedPacket);
+                    pendedPacket = NULL;
                     break;
                 }
 
@@ -5562,10 +5564,6 @@ static void windivert_socket_classify_connect(context_t context,
             {
 
                 result->actionType = FWP_ACTION_PERMIT;
-                if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
-                {
-                    result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
-                }
                 break;
             }
             if (meta_vals->completionHandle != NULL)
@@ -5579,7 +5577,7 @@ static void windivert_socket_classify_connect(context_t context,
                 {
                     match = FALSE;
 
-                    result->actionType = FWP_ACTION_BLOCK;
+                    result->actionType = FWP_ACTION_PERMIT;
                     if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
                     {
                         result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
