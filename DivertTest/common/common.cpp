@@ -88,7 +88,7 @@ namespace common {
             HANDLE process_handle = NULL;
             wchar_t file_name[MAX_PATH + 1] = { 0 };
             std::wstring process_path;
-            process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, process_id);
+            process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION , FALSE, process_id);
             if (process_handle != NULL) {
                 if (GetModuleFileNameExW(process_handle, NULL, file_name, MAX_PATH) > 0) {
                     process_path = file_name;

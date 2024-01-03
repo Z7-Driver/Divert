@@ -106,17 +106,22 @@ int main()
             process_name = common::path::GetFileNameW(process_name);
         }
         std::string is_out = (packet->addr.Outbound == true) ? u8"out" : u8"in";
-        BLOG(INFO) << u8"[" << is_out << u8" " << event_desc << u8"]" << protocol_desc << u8",process:" << common::string::SysWideToUTF8(process_name)
-            << u8"(" << packet->addr.Socket.ProcessId << u8"),local:" << local_addr_str << u8":" << packet->addr.Socket.LocalPort
-            << u8",remote:" << remote_addr_str << u8":" << packet->addr.Socket.RemotePort;
         UINT32 send_len = 0;
-        if (packet->addr.Event == WINDIVERT_EVENT_SOCKET_CONNECT
-            && packet->addr.Socket.Sync)
+        if (packet->addr.Socket.Sync)
         {
+            BLOG(INFO) << u8"[sync  " << is_out << u8" " << event_desc << u8"]" << protocol_desc << u8",process:" << common::string::SysWideToUTF8(process_name)
+                << u8"(" << packet->addr.Socket.ProcessId << u8"),local:" << local_addr_str << u8":" << packet->addr.Socket.LocalPort
+                << u8",remote:" << remote_addr_str << u8":" << packet->addr.Socket.RemotePort;
             packet->addr.Socket.IsUserBlock = FALSE;
             divert_module_.func_.WinDivertSetSocket(divert_handle, &packet->addr);
         }
+        else
+        {
 
+            BLOG(INFO) << u8"[async " << is_out << u8" " << event_desc << u8"]" << protocol_desc << u8",process:" << common::string::SysWideToUTF8(process_name)
+                << u8"(" << packet->addr.Socket.ProcessId << u8"),local:" << local_addr_str << u8":" << packet->addr.Socket.LocalPort
+                << u8",remote:" << remote_addr_str << u8":" << packet->addr.Socket.RemotePort;
+        }
     }
     if (packet)
     {
