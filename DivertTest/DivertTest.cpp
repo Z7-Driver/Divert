@@ -39,7 +39,7 @@ int main()
 
     net::driver::WinDivertModule divert_module_;
     divert_module_.Load(current_directory.c_str());
-    const char* filter = "tcp == TRUE", * err_str;
+    const char* filter = "udp == TRUE", * err_str;
     HANDLE divert_handle = divert_module_.func_.WinDivertOpen(filter, WINDIVERT_LAYER_SOCKET, 10, WINDIVERT_FLAG_RECV_ONLY | WINDIVERT_FLAG_DECISION);
 
     Packet* packet = new Packet();

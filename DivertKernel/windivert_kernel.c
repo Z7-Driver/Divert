@@ -376,7 +376,7 @@ AllocateAndInitializePendedPacket(
     IN void* layer_data,
     IN UINT64 msg_id,
     PWINDIVERT_DATA_SOCKET socket_data,
-    BOOL outbound
+    BOOL outbound, BOOL ipv4
 );
 static VOID windivert_pending_package_worker(IN WDFWORKITEM item);
 static void windivert_outbound_network_v4_classify(
@@ -4623,6 +4623,9 @@ static void windivert_auth_connect_v4_classify(
     {
         return;
     }
+
+    flags = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_FLAGS);
     socket_data.Sync = FALSE;
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4669,14 +4672,9 @@ static void windivert_auth_connect_v6_classify(
     {
         return;
     }
+
     flags = windivert_get_val32(fixed_vals,
         FWPS_FIELD_ALE_AUTH_CONNECT_V6_FLAGS);
-    if ((flags & FWP_CONDITION_FLAG_IS_REAUTHORIZE) != 0)
-    {
-        result->actionType = FWP_ACTION_CONTINUE;
-        return;
-    }
-
     socket_data.Sync = FALSE;
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4889,11 +4887,6 @@ static void windivert_auth_recv_accept_v4_classify(
     }
     flags = windivert_get_val32(fixed_vals,
         FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_FLAGS);
-    if ((flags & FWP_CONDITION_FLAG_IS_REAUTHORIZE) != 0)
-    {
-        result->actionType = FWP_ACTION_CONTINUE;
-        return;
-    }
     socket_data.Sync = FALSE;
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4913,7 +4906,7 @@ static void windivert_auth_recv_accept_v4_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify_accept(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/TRUE,
+    windivert_socket_classify_connect(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4940,11 +4933,6 @@ static void windivert_auth_recv_accept_v6_classify(
     }
     flags = windivert_get_val32(fixed_vals,
         FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_FLAGS);
-    if ((flags & FWP_CONDITION_FLAG_IS_REAUTHORIZE) != 0)
-    {
-        result->actionType = FWP_ACTION_CONTINUE;
-        return;
-    }
     socket_data.Sync = FALSE;
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4964,7 +4952,7 @@ static void windivert_auth_recv_accept_v6_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify_accept(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/FALSE,
+    windivert_socket_classify_connect(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -5094,7 +5082,7 @@ static void windivert_socket_classify_accept(context_t context,
     KLOCK_QUEUE_HANDLE lock_handle;
     UINT64 flags;
     BOOL match = FALSE;
-    BOOL is_reauthorize = FALSE;   
+    BOOL is_reauthorize = FALSE;
     WDFOBJECT object;
     LONGLONG timestamp;
     WINDIVERT_EVENT event = WINDIVERT_EVENT_SOCKET_CONNECT;
@@ -5172,7 +5160,7 @@ static void windivert_socket_classify_accept(context_t context,
                 layer_data,
                 context->msg_id,
                 socket_data,
-                outbound);
+                outbound, ipv4);
             if (meta_vals->completionHandle != NULL)
             {
 
@@ -5423,7 +5411,7 @@ AllocateAndInitializePendedPacket(
     IN void* layer_data,
     IN UINT64 msg_id,
     PWINDIVERT_DATA_SOCKET socket_data,
-    BOOL outbound
+    BOOL outbound, BOOL ipv4
 ) {
 
     PENDED_CONNECT_PACKET* pendedPacket = NULL;
@@ -5441,6 +5429,7 @@ AllocateAndInitializePendedPacket(
         pendedPacket->MsgId = msg_id;
         pendedPacket->Outbound = outbound;
         pendedPacket->ProcessId = socket_data->ProcessId;
+        pendedPacket->ipv4 = ipv4;
         RtlCopyMemory(pendedPacket->LocalAddr, socket_data->LocalAddr, sizeof(socket_data->LocalAddr));
         RtlCopyMemory(pendedPacket->RemoteAddr, socket_data->RemoteAddr, sizeof(socket_data->RemoteAddr));
         pendedPacket->LocalPort = socket_data->LocalPort;
@@ -5448,7 +5437,7 @@ AllocateAndInitializePendedPacket(
         pendedPacket->Protocol = socket_data->Protocol;
         pendedPacket->authConnectDecision = 0;
         pendedPacket->Sync = TRUE;
-        if (pendedPacket->Protocol != 6)//TCP
+        if (pendedPacket->Protocol != 6 && pendedPacket->Protocol != 17)
         {
             break;
         }
@@ -5469,10 +5458,14 @@ AllocateAndInitializePendedPacket(
         {
             if (layer_data == NULL)
             {
+
                 break;
             }
             if (!FWPS_IS_METADATA_FIELD_PRESENT(inMetaValues, FWPS_METADATA_FIELD_TRANSPORT_ENDPOINT_HANDLE))
             {
+
+                FreePendedPacket(pendedPacket);
+                pendedPacket = NULL;
                 break;
             }
             pendedPacket->endpointHandle = inMetaValues->transportEndpointHandle;
@@ -5545,6 +5538,8 @@ BOOLEAN IsValidNetBufferList(NET_BUFFER_LIST* pNetBufferList)
     }
     return TRUE;
 }
+
+
 NTSTATUS NTAPI CloneReinjectOutbound(context_t context, PENDED_CONNECT_PACKET* packet)
 {
     UNREFERENCED_PARAMETER(context);
@@ -5639,6 +5634,11 @@ static void windivert_socket_classify_connect(context_t context,
     if ((packetState == FWPS_PACKET_INJECTED_BY_SELF) || (packetState == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF))
     {
         result->actionType = FWP_ACTION_PERMIT;
+
+        if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+        {
+            result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+        }
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         return;
     }
@@ -5667,8 +5667,7 @@ static void windivert_socket_classify_connect(context_t context,
         if ((WINDIVERT_FLAG_SNIFF & flags) != 0)
         {
 
-            result->actionType = FWP_ACTION_BLOCK;
-            result->flags |= FWPS_CLASSIFY_OUT_FLAG_ABSORB;
+            result->actionType = FWP_ACTION_PERMIT;
             result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
             break;
         }
@@ -5684,8 +5683,18 @@ static void windivert_socket_classify_connect(context_t context,
                 layer_data,
                 context->msg_id,
                 socket_data,
-                outbound);
-            if (pPendConnect->compartmentId != 0)
+                outbound, ipv4);
+            if (pPendConnect == NULL)
+            {
+
+                result->actionType = FWP_ACTION_PERMIT;
+                if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+                {
+                    result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+                }
+                break;
+            }
+            if (meta_vals->completionHandle != NULL)
             {
 
                 status = FwpsPendOperation(
@@ -5695,6 +5704,12 @@ static void windivert_socket_classify_connect(context_t context,
                 if (!NT_SUCCESS(status))
                 {
                     match = FALSE;
+
+                    result->actionType = FWP_ACTION_BLOCK;
+                    if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+                    {
+                        result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+                    }
                     break;
 
                 }
@@ -5745,12 +5760,19 @@ static void windivert_socket_classify_connect(context_t context,
 
             if (pPendConnect->authConnectDecision == FWP_ACTION_PERMIT && pPendConnect->NetBufferList != NULL)
             {
-                if (!CloneReinjectOutbound(context, pPendConnect))
+                if (outbound)
                 {
-                    FreePendedPacket(pPendConnect);
+                    if (!NT_SUCCESS(CloneReinjectOutbound(context, pPendConnect)))
+                    {
+                        FreePendedPacket(pPendConnect);
+                    }
                 }
                 pPendConnect = NULL;
             }
+        }
+        else
+        {
+            result->actionType = FWP_ACTION_PERMIT;
         }
     } while (FALSE);
 
@@ -6043,6 +6065,7 @@ static VOID windivert_pending_package_worker(IN WDFWORKITEM item)
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             InsertTailList(&context->connect_complete_queue, &pend_connect->entry);
             KeReleaseInStackQueuedSpinLock(&lock_handle);
+
             FwpsCompleteOperation0(completionContext, NULL);
         }
         else
@@ -6054,7 +6077,6 @@ static VOID windivert_pending_package_worker(IN WDFWORKITEM item)
             }
             else
             {
-
                 NTSTATUS status = CloneReinjectInbound(context, pend_connect);
                 if (!NT_SUCCESS(status))
                 {
