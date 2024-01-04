@@ -504,6 +504,15 @@ static void windivert_socket_classify_connect(context_t context,
     IN void* layer_data,
     PWINDIVERT_DATA_SOCKET socket_data, BOOL ipv4,
     BOOL outbound, BOOL loopback, FWPS_CLASSIFY_OUT0* result);
+
+static void windivert_socket_classify_accept(context_t context,
+    IN const FWPS_INCOMING_VALUES0* fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0* meta_vals,
+    const FWPS_FILTER0* filter,
+    IN void* layer_data,
+    PWINDIVERT_DATA_SOCKET socket_data, BOOL ipv4,
+    BOOL outbound, BOOL loopback, FWPS_CLASSIFY_OUT0* result
+);
 static void windivert_network_classify(context_t context,
     IN PWINDIVERT_DATA_NETWORK network_data, IN BOOL ipv4, IN BOOL outbound,
     IN BOOL loopback, IN BOOL reassembled, IN UINT advance, IN OUT void* data,
@@ -4934,7 +4943,7 @@ static void windivert_auth_recv_accept_v4_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify_connect(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/TRUE,
+    windivert_socket_classify_accept(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4980,7 +4989,7 @@ static void windivert_auth_recv_accept_v6_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify_connect(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/FALSE,
+    windivert_socket_classify_accept(context, fixed_vals, meta_vals, filter, data, &socket_data, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -5309,12 +5318,23 @@ AllocateAndInitializePendedPacket(
         pendedPacket->ipv4 = ipv4;
         RtlCopyMemory(pendedPacket->LocalAddr, socket_data->LocalAddr, sizeof(socket_data->LocalAddr));
         RtlCopyMemory(pendedPacket->RemoteAddr, socket_data->RemoteAddr, sizeof(socket_data->RemoteAddr));
+
+
+        if (ipv4)
+        {
+            pendedPacket->LocalAddr_ipv4net = RtlUlongByteSwap(pendedPacket->LocalAddr[0]);
+            pendedPacket->RemoteAddr_ipv4net = RtlUlongByteSwap(pendedPacket->RemoteAddr[0]);
+        }
+
         pendedPacket->LocalPort = socket_data->LocalPort;
         pendedPacket->RemotePort = socket_data->RemotePort;
         pendedPacket->Protocol = socket_data->Protocol;
         pendedPacket->authConnectDecision = 0;
         pendedPacket->Sync = TRUE;
-        if (pendedPacket->Protocol != IPPROTO_TCP && pendedPacket->Protocol != IPPROTO_UDP)
+        if (pendedPacket->Protocol != IPPROTO_TCP
+            && pendedPacket->Protocol != IPPROTO_UDP
+            && pendedPacket->Protocol != IPPROTO_ICMP
+            && pendedPacket->Protocol != IPPROTO_ICMPV6)
         {
             break;
         }
@@ -5439,8 +5459,16 @@ static NTSTATUS NTAPI CloneReinjectOutbound(context_t context, PENDED_CONNECT_PA
     {
         goto Exit;
     }
+    if (packet->ipv4)
+    {
 
-    sendArgs.remoteAddress = (UINT8*)(&packet->RemoteAddr);
+        sendArgs.remoteAddress = (UINT8*)(&packet->RemoteAddr_ipv4net);
+    }
+    else
+    {
+
+        sendArgs.remoteAddress = (UINT8*)(&packet->RemoteAddr);
+    }
     sendArgs.remoteScopeId = packet->remoteScopeId;
     sendArgs.controlData = packet->controlData;
     sendArgs.controlDataLength = packet->controlDataLength;
@@ -5473,6 +5501,216 @@ Exit:
     }
     return status;
 }
+static void windivert_socket_classify_accept(context_t context,
+    IN const FWPS_INCOMING_VALUES0* fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0* meta_vals,
+    const FWPS_FILTER0* filter,
+    IN void* layer_data,
+    PWINDIVERT_DATA_SOCKET socket_data, BOOL ipv4,
+    BOOL outbound, BOOL loopback, FWPS_CLASSIFY_OUT0* result
+)
+{
+    NTSTATUS status;
+    KLOCK_QUEUE_HANDLE lock_handle;
+    UINT64 flags;
+    BOOL match = FALSE;
+    BOOL is_reauthorize = FALSE;
+    WDFOBJECT object;
+    LONGLONG timestamp;
+    WINDIVERT_EVENT event = WINDIVERT_EVENT_SOCKET_CONNECT;
+    PENDED_CONNECT_PACKET* pPendConnect = NULL;
+    const WINDIVERT_FILTER* package_filter;
+    // Get the timestamp.
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
+
+    if ((result->rights & FWPS_RIGHT_ACTION_WRITE) != 0)
+    {
+        result->actionType = FWP_ACTION_CONTINUE;
+    }
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return;
+    }
+
+    FWPS_PACKET_INJECTION_STATE packetState = FwpsQueryPacketInjectionState0(inject_transport_handle, (NET_BUFFER_LIST*)layer_data, NULL);
+    if ((packetState == FWPS_PACKET_INJECTED_BY_SELF) || (packetState == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF))
+    {
+        result->actionType = FWP_ACTION_PERMIT;
+
+        if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+        {
+            result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+        }
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return;
+    }
+    is_reauthorize = IsReauthorizeclassify(fixed_vals);
+    package_filter = context->filter;
+    flags = context->flags;
+    object = (WDFOBJECT)context->object;
+    WdfObjectReference(object);
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+
+    do
+    {
+        if (is_reauthorize)
+        {
+            break;
+        }
+        match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
+            (PVOID)socket_data, timestamp, event, ipv4, outbound, loopback,
+            /*impostor=*/FALSE, /*frag_mode=*/FALSE, package_filter);
+        if (!match)
+        {
+            break;
+        }
+
+        if ((WINDIVERT_FLAG_SNIFF & flags) != 0)
+        {
+
+            result->actionType = FWP_ACTION_PERMIT;
+            result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+            break;
+        }
+
+        if ((WINDIVERT_FLAG_DECISION & flags) != 0)
+        {
+            //pend
+            context->msg_id = context->msg_id + 1;
+            pPendConnect = AllocateAndInitializePendedPacket(
+                fixed_vals,
+                meta_vals,
+                layer_data,
+                context->msg_id,
+                socket_data,
+                outbound, ipv4);
+            if (pPendConnect == NULL)
+            {
+
+                result->actionType = FWP_ACTION_PERMIT;
+                break;
+            }
+            if (meta_vals->completionHandle != NULL)
+            {
+
+                status = FwpsPendOperation(
+                    (HANDLE)meta_vals->completionHandle,
+                    (HANDLE*)&pPendConnect->CompletionContext
+                );
+                if (!NT_SUCCESS(status))
+                {
+                    match = FALSE;
+
+                    result->actionType = FWP_ACTION_PERMIT;
+                    if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+                    {
+                        result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+                    }
+                    break;
+
+                }
+                socket_data->MsgId = pPendConnect->MsgId;
+                socket_data->Sync = pPendConnect->Sync;
+                socket_data->IsUserBlock = 0;
+
+
+                result->actionType = FWP_ACTION_BLOCK;
+                result->flags |= FWPS_CLASSIFY_OUT_FLAG_ABSORB;
+                result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+
+                KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+                if (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
+                    !context->shutdown_recv)
+                {
+                    InsertTailList(&context->connect_pending_queue, &pPendConnect->entry);
+                    pPendConnect = NULL;
+                }
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+            }
+            else
+            {
+
+                result->actionType = FWP_ACTION_PERMIT;
+                if (filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+                {
+                    result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+                }
+            }
+
+        }
+    } while (FALSE);
+    //认证流程处理
+    do
+    {
+
+        if (!is_reauthorize)
+        {
+            break;
+        }
+        if (outbound)
+        {
+            pPendConnect = RemoveConnectEvent(context, socket_data, outbound);
+            if (pPendConnect == NULL)
+            {
+
+                result->actionType = FWP_ACTION_PERMIT;
+                break;
+            }
+            result->actionType = pPendConnect->authConnectDecision;
+            if (result->actionType == FWP_ACTION_BLOCK || filter->flags & FWPS_FILTER_FLAG_CLEAR_ACTION_RIGHT)
+            {
+                result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+            }
+
+            if (pPendConnect->authConnectDecision == FWP_ACTION_PERMIT && pPendConnect->NetBufferList != NULL)
+            {
+                if (outbound)
+                {
+
+
+                    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+                    if (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
+                        !context->shutdown_recv)
+                    {
+                        InsertTailList(&context->reinject_queue, &pPendConnect->entry);
+                        pPendConnect = NULL;
+                    }
+                    KeReleaseInStackQueuedSpinLock(&lock_handle);
+                    WdfWorkItemEnqueue(context->reinject_connect_worker);
+                }
+                else
+                {
+
+                    pPendConnect = NULL;
+                }
+            }
+        }
+        else
+        {
+            result->actionType = FWP_ACTION_PERMIT;
+        }
+    } while (FALSE);
+
+    if (match)
+    {
+        windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
+            /*buffers=*/NULL, /*object=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
+            (PVOID)socket_data, event, flags, /*priority=*/0, ipv4, outbound,
+            loopback, /*impostor=*/FALSE, match, timestamp);
+    }
+    WdfObjectDereference(object);
+    if (pPendConnect != NULL)
+    {
+        FreePendedPacket(pPendConnect);
+    }
+}
+
 static void windivert_socket_classify_connect(context_t context,
     IN const FWPS_INCOMING_VALUES0* fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0* meta_vals,

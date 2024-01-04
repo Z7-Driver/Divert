@@ -15,6 +15,8 @@ typedef struct  PENDED_CONNECT_PACKET_
     UINT32 ProcessId;                   /* Process ID. */
     UINT32 LocalAddr[4];                /* Local address. */
     UINT32 RemoteAddr[4];               /* Remote address. */
+    UINT32 LocalAddr_ipv4net;                /* Local address.网络字节序 */
+    UINT32 RemoteAddr_ipv4net;               /* Remote address.网络字节序 */
     UINT16 LocalPort;                   /* Local port. */
     UINT16 RemotePort;                  /* Remote port. */
     BOOL ipv4;                       /*是否是IPv4*/
